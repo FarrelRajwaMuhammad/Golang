@@ -3,6 +3,7 @@ package usercontroller
 import (
 	"backend/models"
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -10,7 +11,6 @@ import (
 )
 
 func FetchAndSaveUsers(c *gin.Context) {
-	// Mengambil data dari JSONPlaceholder
 	resp, err := http.Get("https://jsonplaceholder.typicode.com/posts")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch data from JSONPlaceholder"})
@@ -18,14 +18,12 @@ func FetchAndSaveUsers(c *gin.Context) {
 	}
 	defer resp.Body.Close()
 
-	// Parsing JSON response dari JSONPlaceholder
 	var users []models.User
 	if err := json.NewDecoder(resp.Body).Decode(&users); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to decode JSON data"})
 		return
 	}
 
-	// Menyimpan data ke database MySQL
 	for _, user := range users {
 		if err := models.DB.Create(&user).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save data to database"})
@@ -33,7 +31,6 @@ func FetchAndSaveUsers(c *gin.Context) {
 		}
 	}
 
-	// Mengembalikan response bahwa data berhasil disimpan
 	c.JSON(http.StatusOK, gin.H{"message": "Data successfully fetched from JSONPlaceholder and saved to database"})
 }
 
@@ -61,63 +58,49 @@ func Show(C *gin.Context) {
 
 func Create(C *gin.Context) {
 	var user models.User
+
 	if err := C.ShouldBindJSON(&user); err != nil {
-		C.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input"})
+		C.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input", "details": err.Error()})
 		return
 	}
 
-	if err := models.DB.Create(&user).Error; err != nil {
-		C.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
-		return
-	}
-
+	models.DB.Create(&user)
 	C.JSON(http.StatusCreated, user)
 }
 
 func Update(C *gin.Context) {
+	var user models.User
 	id := C.Param("id")
-	var input struct {
-		UserID uint   `json:"userId"`
-		Title  string `json:"title"`
-		Body   string `json:"body"`
-	}
 
-	if err := C.ShouldBindJSON(&input); err != nil {
-		C.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input"})
+	if err := C.ShouldBindJSON(&user); err != nil {
+		C.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
 
-	if err := models.DB.Model(&models.User{}).
-		Where("id = ?", id).
-		Updates(models.User{
-			UserID: input.UserID,
-			Title:  input.Title,
-			Body:   input.Body,
-		}).Error; err != nil {
-		C.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user"})
+	if models.DB.Model(&user).Where("id = ?", id).Updates(&user).RowsAffected == 0 {
+		C.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"message": "failed update data"})
 		return
 	}
 
-	if models.DB.RowsAffected == 0 {
-		C.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
-		return
-	}
-
-	C.JSON(http.StatusOK, gin.H{"message": "User updated successfully"})
+	C.JSON(http.StatusOK, gin.H{"message": "Data Updated"})
 }
 
 func Delete(C *gin.Context) {
-	id := C.Param("id")
+	var input struct {
+		ID int64 `json:"id"`
+	}
 
-	if err := models.DB.Where("id = ?", id).Delete(&models.User{}).Error; err != nil {
-		C.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete user"})
+	if err := C.ShouldBindJSON(&input); err != nil {
+		C.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
 
-	if models.DB.RowsAffected == 0 {
-		C.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+	fmt.Println("Deleting user with ID:", input.ID)
+
+	if err := models.DB.Where("id = ?", input.ID).Delete(&models.User{}).Error; err != nil {
+		C.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"message": "Failed to delete user", "error": err.Error()})
 		return
 	}
 
-	C.JSON(http.StatusOK, gin.H{"message": "User deleted successfully"})
+	C.JSON(http.StatusOK, gin.H{"message": "Data has been Deleted"})
 }
